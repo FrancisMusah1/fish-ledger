@@ -8,6 +8,8 @@ const emptyLine = { fishTypeId: '', pieces: '', price: '' };
 export default function SaleScreen() {
   const customers = useLiveQuery(() => db.customers.orderBy('name').toArray(), []);
   const fishTypes = useLiveQuery(() => db.fishTypes.toArray(), []);
+  const today = new Date().toLocaleDateString('en-CA');
+  const [date, setDate] = useState(today);
 
   const [customerId, setCustomerId] = useState('');
   const [newName, setNewName] = useState('');
@@ -44,6 +46,7 @@ export default function SaleScreen() {
       (l) => l.fishTypeId && Number(l.pieces) > 0 && Number(l.price) > 0
     );
     if (!customerId) return setMessage('Choose a customer first.');
+    if (!date) return setMessage('Choose a date.');
     if (validLines.length === 0) return setMessage('Add at least one fish line.');
 
     const saleTotal = validLines.reduce((sum, l) => sum + lineTotal(l), 0);
@@ -51,7 +54,8 @@ export default function SaleScreen() {
     if (paidPesewas < 0 || paidPesewas > saleTotal)
       return setMessage('Paid must be between 0 and the total.');
 
-    const now = new Date().toISOString();
+    const enteredAt = new Date().toISOString();
+const when = date === today ? enteredAt : new Date(date + 'T12:00:00').toISOString();
 
     await db.transaction(
       'rw',
@@ -62,7 +66,7 @@ export default function SaleScreen() {
       async () => {
         const saleId = await db.sales.add({
           customerId: Number(customerId),
-          soldAt: now,
+          soldAt: when, enteredAt,
           total: saleTotal,
         });
         await db.saleItems.bulkAdd(
@@ -79,7 +83,7 @@ export default function SaleScreen() {
             customerId: Number(customerId),
             amount: paidPesewas,
             method,
-            paidAt: now,
+            paidAt: when,
           });
           await db.allocations.add({ paymentId, saleId, amount: paidPesewas });
         }
@@ -94,6 +98,12 @@ export default function SaleScreen() {
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: 16 }}>
       <h2>New sale</h2>
+
+      <input type="date" value={date} max={today}
+  onChange={(e) => setDate(e.target.value)} />
+{date !== today && (
+  <p style={{ color: 'red' }}>Saving as an old entry: {date}</p>
+)}
 
       <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
         <option value="">Choose customer</option>
