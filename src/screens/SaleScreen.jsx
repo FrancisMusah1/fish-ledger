@@ -14,6 +14,8 @@ export default function SaleScreen() {
   const [newPlace, setNewPlace] = useState('');
   const [lines, setLines] = useState([{ ...emptyLine }]);
   const [paid, setPaid] = useState('');
+  const [method, setMethod] = useState('cash');
+  const [message, setMessage] = useState('');
 
   const addCustomer = async () => {
     if (!newName.trim()) return;
@@ -36,6 +38,58 @@ export default function SaleScreen() {
     Math.round(Number(l.pieces || 0) * toPesewas(l.price || 0));
   const total = lines.reduce((sum, l) => sum + lineTotal(l), 0);
   const balance = total - toPesewas(paid || 0);
+
+  const save = async () => {
+    const validLines = lines.filter(
+      (l) => l.fishTypeId && Number(l.pieces) > 0 && Number(l.price) > 0
+    );
+    if (!customerId) return setMessage('Choose a customer first.');
+    if (validLines.length === 0) return setMessage('Add at least one fish line.');
+
+    const saleTotal = validLines.reduce((sum, l) => sum + lineTotal(l), 0);
+    const paidPesewas = toPesewas(paid || 0);
+    if (paidPesewas < 0 || paidPesewas > saleTotal)
+      return setMessage('Paid must be between 0 and the total.');
+
+    const now = new Date().toISOString();
+
+    await db.transaction(
+      'rw',
+      db.sales,
+      db.saleItems,
+      db.payments,
+      db.allocations,
+      async () => {
+        const saleId = await db.sales.add({
+          customerId: Number(customerId),
+          soldAt: now,
+          total: saleTotal,
+        });
+        await db.saleItems.bulkAdd(
+          validLines.map((l) => ({
+            saleId,
+            fishTypeId: Number(l.fishTypeId),
+            pieces: Number(l.pieces),
+            pricePerPiece: toPesewas(l.price),
+            lineTotal: lineTotal(l),
+          }))
+        );
+        if (paidPesewas > 0) {
+          const paymentId = await db.payments.add({
+            customerId: Number(customerId),
+            amount: paidPesewas,
+            method,
+            paidAt: now,
+          });
+          await db.allocations.add({ paymentId, saleId, amount: paidPesewas });
+        }
+      }
+    );
+
+    setMessage(`Saved. Balance on this sale: ${formatCedis(saleTotal - paidPesewas)}`);
+    setLines([{ ...emptyLine }]);
+    setPaid('');
+  };
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: 16 }}>
@@ -81,7 +135,13 @@ export default function SaleScreen() {
       <p>Total: {formatCedis(total)}</p>
       <input type="number" placeholder="Paid now" value={paid}
         onChange={(e) => setPaid(e.target.value)} />
+      <select value={method} onChange={(e) => setMethod(e.target.value)}>
+        <option value="cash">Cash</option>
+        <option value="momo">Mobile money</option>
+      </select>
       <p>Balance: {formatCedis(balance)}</p>
+      <button onClick={save}>Save sale</button>
+      {message && <p>{message}</p>}
     </div>
   );
 }
