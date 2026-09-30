@@ -12,6 +12,11 @@ db.version(1).stores({
   expenses: '++id, spentAt',
 });
 
+db.version(2).stores({
+    supplierInvoices: '++id, invoiceNo, invoiceDate',
+    supplierPayments: '++id, invoiceId, paidAt',
+  });
+
 db.on('populate', () => {
   db.fishTypes.bulkAdd([
     { name: 'Tuna' },
