@@ -3,13 +3,17 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { formatCedis } from '../lib/money';
 
+// Date as dd/mm/yyyy, e.g. 29/09/2026.
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-GB');
 
 export default function StatementScreen() {
+  // Live lists for the dropdown and for fish names.
   const customers = useLiveQuery(() => db.customers.orderBy('name').toArray(), []);
   const fishTypes = useLiveQuery(() => db.fishTypes.toArray(), []);
   const [customerId, setCustomerId] = useState('');
 
+  // Load the chosen customer's sales, payments and sale lines.
+  // Re-runs automatically when the customer or the data changes.
   const data = useLiveQuery(async () => {
     if (!customerId) return null;
     const id = Number(customerId);
@@ -23,8 +27,10 @@ export default function StatementScreen() {
   }, [customerId]);
 
   const customer = customers?.find((c) => c.id === Number(customerId));
+  // Fish id -> fish name (empty text until the list has loaded).
   const fishName = (id) => fishTypes?.find((f) => f.id === id)?.name ?? '';
 
+  // Merge sales and payments into one list, oldest first.
   const events = data
     ? [
         ...data.sales.map((s) => ({ type: 'sale', at: s.soldAt, sale: s })),
@@ -32,12 +38,14 @@ export default function StatementScreen() {
       ].sort((a, b) => a.at.localeCompare(b.at))
     : [];
 
+  // Running balance: starts at the old balance, then + sales and - payments.
   let running = customer?.openingBalance || 0;
   const rows = events.map((e) => {
     running += e.type === 'sale' ? e.sale.total : -e.payment.amount;
     return { ...e, running };
   });
 
+  // Line separating one entry from the next.
   const box = { borderTop: '1px solid #ccc', padding: '8px 0' };
 
   return (
@@ -56,12 +64,14 @@ export default function StatementScreen() {
 
       {customer && data && (
         <>
+          {/* Old debt carried in from the book, if any. */}
           {customer.openingBalance > 0 && (
             <p>Old balance: {formatCedis(customer.openingBalance)}</p>
           )}
 
           {rows.map((r) =>
             r.type === 'sale' ? (
+              // A sale: its lines (price × pieces), total and running balance.
               <div key={'s' + r.sale.id} style={box}>
                 <strong>{fmtDate(r.at)}</strong>
                 {data.items
@@ -76,6 +86,7 @@ export default function StatementScreen() {
                 <div>Balance: {formatCedis(r.running)}</div>
               </div>
             ) : (
+              // A payment: amount, method and running balance.
               <div key={'p' + r.payment.id} style={box}>
                 <strong>{fmtDate(r.at)}</strong> Paid ({r.payment.method}):{' '}
                 {formatCedis(r.payment.amount)}
@@ -84,6 +95,7 @@ export default function StatementScreen() {
             )
           )}
 
+          {/* Final balance = what the customer owes now. */}
           <h3>Balance owed: {formatCedis(running)}</h3>
         </>
       )}
