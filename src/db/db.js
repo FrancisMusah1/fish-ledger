@@ -1,7 +1,11 @@
 import Dexie from 'dexie';
 
-// New database name: the primary keys changed, and Dexie cannot change keys
-// on an existing database. (Old test data stays in "fishLedger", unused.)
+// Tables that sync with the online database (every table in the app).
+export const TABLES = [
+  'customers', 'fishTypes', 'sales', 'saleItems', 'payments',
+  'allocations', 'expenses', 'supplierInvoices', 'supplierPayments',
+];
+
 export const db = new Dexie('fishLedgerV2');
 
 // Unique numeric id for every new row, so two phones never create the same id.
@@ -16,25 +20,47 @@ export const newId = () => {
   return id;
 };
 
-// All tables. `id` is our own unique number (no ++ auto-numbering).
-// Only fields listed after the id can be searched or filtered.
+// Version 1: the original tables (kept so existing phones upgrade smoothly).
 db.version(1).stores({
-  customers: 'id, name, place',                  // people who buy fish
-  fishTypes: 'id, name',                         // tuna, doctor fish, ...
-  sales: 'id, customerId, soldAt',               // one row per visit
-  saleItems: 'id, saleId, fishTypeId',           // lines: pieces x price
-  payments: 'id, customerId, paidAt',            // money received from customers
-  allocations: 'id, paymentId, saleId',          // which payment settled which sale
-  expenses: 'id, spentAt',                       // small daily costs
+  customers: 'id, name, place',                   // people who buy fish
+  fishTypes: 'id, name',                          // tuna, doctor fish, ...
+  sales: 'id, customerId, soldAt',                // one row per visit
+  saleItems: 'id, saleId, fishTypeId',            // lines: pieces x price
+  payments: 'id, customerId, paidAt',             // money received from customers
+  allocations: 'id, paymentId, saleId',           // which payment settled which sale
+  expenses: 'id, spentAt',                        // small daily costs
   supplierInvoices: 'id, invoiceNo, invoiceDate', // invoices from the cold store
   supplierPayments: 'id, invoiceId, paidAt',      // payments made to the cold store
 });
 
-// Give every new row an id automatically (add and bulkAdd), so the screens
-// need no changes. Rows that already have an id (seed data, backup restores,
-// rows downloaded from the server) keep theirs.
+// Version 2: adds the `unsynced` index to every table.
+// unsynced = 1 -> not uploaded yet; 0 -> already on the server.
+// Never edit an old version: schema changes always get a new version number.
+db.version(2)
+  .stores({
+    customers: 'id, name, place, unsynced',
+    fishTypes: 'id, name, unsynced',
+    sales: 'id, customerId, soldAt, unsynced',
+    saleItems: 'id, saleId, fishTypeId, unsynced',
+    payments: 'id, customerId, paidAt, unsynced',
+    allocations: 'id, paymentId, saleId, unsynced',
+    expenses: 'id, spentAt, unsynced',
+    supplierInvoices: 'id, invoiceNo, invoiceDate, unsynced',
+    supplierPayments: 'id, invoiceId, paidAt, unsynced',
+  })
+  .upgrade((tx) =>
+    // Rows saved before this version are marked "not uploaded", so they sync too.
+    Promise.all(
+      TABLES.map((name) => tx.table(name).toCollection().modify({ unsynced: 1 }))
+    )
+  );
+
+// For every new row: give it an id if it has none (add and bulkAdd), and mark
+// it as waiting for upload. Rows that already carry an id or an unsynced value
+// (seed data, backup restores, rows downloaded from the server) keep theirs.
 db.tables.forEach((table) => {
-  table.hook('creating', (primKey) => {
+  table.hook('creating', (primKey, obj) => {
+    if (obj.unsynced === undefined) obj.unsynced = 1;
     if (primKey === undefined) return newId();
   });
 });
