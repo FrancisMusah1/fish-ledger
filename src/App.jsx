@@ -7,6 +7,7 @@ import PurchasesScreen from './screens/PurchasesScreen';
 import ExpensesScreen from './screens/ExpensesScreen';
 import SummaryScreen from './screens/SummaryScreen';
 import BackupScreen from './screens/BackupScreen';
+import AccountScreen from './screens/AccountScreen';
 
 export default function App() {
   // Which screen is showing.
@@ -30,6 +31,7 @@ export default function App() {
         <button onClick={() => setTab('expenses')}>Expenses</button>
         <button onClick={() => setTab('summary')}>Summary</button>
         <button onClick={() => setTab('backup')}>Backup</button>
+        <button onClick={() => setTab('account')}>Account</button>
       </nav>
 
       {/* Show only the screen matching the chosen tab. */}
@@ -41,6 +43,7 @@ export default function App() {
       {tab === 'expenses' && <ExpensesScreen />}
       {tab === 'summary' && <SummaryScreen />}
       {tab === 'backup' && <BackupScreen />}
+      {tab === 'account' && <AccountScreen />}
     </>
   );
 }
